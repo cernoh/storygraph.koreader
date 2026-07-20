@@ -1,7 +1,7 @@
 require("spec_helper")
 
 describe("Sync", function()
-    local Sync, Config
+    local Sync, Config, mock_api
 
     before_each(function()
         package.loaded["config"] = nil
@@ -18,7 +18,7 @@ describe("Sync", function()
         end
 
         -- Mock api to avoid HTTP calls
-        local mock_api = {
+        mock_api = {
             login = function() return true end,
             updateStatus = function() return true end,
             updateProgress = function() return true end,
@@ -100,18 +100,10 @@ describe("Sync", function()
 
         it("sets status to read when percentage >= 95", function()
             local sent_status = nil
-            package.loaded["api"] = nil
-            local mock_api = {
-                login = function() return true end,
-                updateStatus = function(_, status)
-                    sent_status = status
-                    return true
-                end,
-                updateProgress = function() return true end,
-            }
-            package.preload["api"] = function() return mock_api end
-            package.loaded["sync"] = nil
-            Sync = require("sync")
+            mock_api.updateStatus = function(_, status)
+                sent_status = status
+                return true
+            end
 
             Sync.onBookClose("book-1", 95, 300)
             assert.are.equal("read", sent_status)
@@ -119,18 +111,10 @@ describe("Sync", function()
 
         it("sets status to currently-reading when percentage < 95", function()
             local sent_status = nil
-            package.loaded["api"] = nil
-            local mock_api = {
-                login = function() return true end,
-                updateStatus = function(_, status)
-                    sent_status = status
-                    return true
-                end,
-                updateProgress = function() return true end,
-            }
-            package.preload["api"] = function() return mock_api end
-            package.loaded["sync"] = nil
-            Sync = require("sync")
+            mock_api.updateStatus = function(_, status)
+                sent_status = status
+                return true
+            end
 
             Sync.onBookClose("book-1", 50, 300)
             assert.are.equal("currently-reading", sent_status)
@@ -138,18 +122,10 @@ describe("Sync", function()
 
         it("normalizes percentage to 100 when >= 95", function()
             local sent_percentage = nil
-            package.loaded["api"] = nil
-            local mock_api = {
-                login = function() return true end,
-                updateStatus = function() return true end,
-                updateProgress = function(_, pct)
-                    sent_percentage = pct
-                    return true
-                end,
-            }
-            package.preload["api"] = function() return mock_api end
-            package.loaded["sync"] = nil
-            Sync = require("sync")
+            mock_api.updateProgress = function(_, pct)
+                sent_percentage = pct
+                return true
+            end
 
             Sync.onBookClose("book-1", 97, 300)
             assert.are.equal(100, sent_percentage)
@@ -157,18 +133,10 @@ describe("Sync", function()
 
         it("keeps actual percentage when < 95", function()
             local sent_percentage = nil
-            package.loaded["api"] = nil
-            local mock_api = {
-                login = function() return true end,
-                updateStatus = function() return true end,
-                updateProgress = function(_, pct)
-                    sent_percentage = pct
-                    return true
-                end,
-            }
-            package.preload["api"] = function() return mock_api end
-            package.loaded["sync"] = nil
-            Sync = require("sync")
+            mock_api.updateProgress = function(_, pct)
+                sent_percentage = pct
+                return true
+            end
 
             Sync.onBookClose("book-1", 73, 300)
             assert.are.equal(73, sent_percentage)
@@ -182,18 +150,10 @@ describe("Sync", function()
 
         it("queues currently-reading status for new book", function()
             local sent_status = nil
-            package.loaded["api"] = nil
-            local mock_api = {
-                login = function() return true end,
-                updateStatus = function(_, status)
-                    sent_status = status
-                    return true
-                end,
-                updateProgress = function() return true end,
-            }
-            package.preload["api"] = function() return mock_api end
-            package.loaded["sync"] = nil
-            Sync = require("sync")
+            mock_api.updateStatus = function(_, status)
+                sent_status = status
+                return true
+            end
 
             Sync.onBookOpen("book-1")
             assert.are.equal("currently-reading", sent_status)
@@ -203,18 +163,10 @@ describe("Sync", function()
             Config.setLastSyncState("book-1", "read", 100)
 
             local sent_status = nil
-            package.loaded["api"] = nil
-            local mock_api = {
-                login = function() return true end,
-                updateStatus = function(_, status)
-                    sent_status = status
-                    return true
-                end,
-                updateProgress = function() return true end,
-            }
-            package.preload["api"] = function() return mock_api end
-            package.loaded["sync"] = nil
-            Sync = require("sync")
+            mock_api.updateStatus = function(_, status)
+                sent_status = status
+                return true
+            end
 
             Sync.onBookOpen("book-1")
             assert.is_nil(sent_status)
@@ -227,15 +179,7 @@ describe("Sync", function()
         end)
 
         it("keeps failed actions in queue for retry", function()
-            package.loaded["api"] = nil
-            local mock_api = {
-                login = function() return true end,
-                updateStatus = function() return false, "network error" end,
-                updateProgress = function() return true end,
-            }
-            package.preload["api"] = function() return mock_api end
-            package.loaded["sync"] = nil
-            Sync = require("sync")
+            mock_api.updateStatus = function() return false, "network error" end
 
             Sync.queueAction("book-1", "status", { status = "read" })
             local result = Sync.processQueue()

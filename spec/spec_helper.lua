@@ -27,10 +27,8 @@ local function make_memory_settings()
     }
 end
 
--- Mock datastorage: returns a temp path for settings dir
-local mock_settings_dir = os.tmpname()
-os.remove(mock_settings_dir)
-os.execute("mkdir -p " .. mock_settings_dir)
+-- Mock datastorage: dummy path (luasettings is fully in-memory)
+local mock_settings_dir = "/mock/settings/dir"
 
 package.preload["datastorage"] = function()
     return {
