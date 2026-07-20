@@ -1,0 +1,9 @@
+return {
+  default = {
+    root = "spec",
+    helper = "spec_helper",
+    pattern = "_spec%.lua$",
+    verbose = true,
+    lpath = "./spec/?.lua",
+  },
+}
