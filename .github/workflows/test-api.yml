@@ -1,0 +1,31 @@
+name: Test StoryGraph API
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  api-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check StoryGraph login page reachable
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+            "https://app.thestorygraph.com/users/sign_in")
+          echo "Login page HTTP status: $code"
+          [ "$code" = "200" ] || exit 1
+
+      - name: Check ISBN search endpoint responds
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+            "https://app.thestorygraph.com/search?query=9780140328721")
+          echo "Search endpoint HTTP status: $code"
+          # 200 = results page, 302 = redirect to login (both acceptable)
+          [ "$code" = "200" ] || [ "$code" = "302" ] || exit 1
+
+      - name: Check DNS resolution
+        run: |
+          host app.thestorygraph.com
