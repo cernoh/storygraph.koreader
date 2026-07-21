@@ -4,7 +4,7 @@ Sync reading progress and status from KOReader to StoryGraph.
 
 ## Status
 
-Design complete. Implementation not started.
+Implemented and tested. Ready for use on KOReader devices.
 
 ## What It Does
 
@@ -28,9 +28,38 @@ Book open/close → Plugin queues action → Batched sync on close → HTTP POST
 - StoryGraph account
 - Internet connection (syncs when online, queues when offline)
 
+## Installation
+
+Download the latest release from [Releases](../../releases) and extract `storygraph.koplugin/` into your KOReader `plugins/` directory.
+
 ## Configuration
 
 Credentials stored in plugin config file (plaintext). Configure via popup window on first use.
+
+## Development
+
+### Nix flake
+
+```bash
+nix develop       # enter dev shell
+dev               # launch KOReader with plugin loaded
+run-tests         # run test suite (unit, integration, or all)
+check-lint        # run luacheck
+check-types       # run lua-language-server diagnostics
+```
+
+### Test suite
+
+86 tests covering unit and integration scenarios:
+
+- **Unit tests** — mocked KOReader dependencies, fast isolated tests
+- **Integration tests** — real KOReader modules, validates plugin flow and queue persistence
+- **HttpInspector** — visual test harness in `web/index.html` for API debugging
+
+### CI
+
+- API health check runs on tags and manual dispatch
+- Release workflow bundles plugin into zip on `v*` tags
 
 ## Documentation
 
