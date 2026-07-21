@@ -185,4 +185,9 @@ function Sync.clearQueue()
     saveQueue({})
 end
 
+-- Get current queue (for testing)
+function Sync.getQueue()
+    return getQueue()
+end
+
 return Sync

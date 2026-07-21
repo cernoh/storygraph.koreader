@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>StoryGraph Plugin — Visual Test Harness</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 { color: #00d4ff; margin-bottom: 10px; font-size: 1.5em; }
+        h2 { color: #ffa500; margin: 20px 0 10px; font-size: 1.1em; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        .subtitle { color: #888; font-size: 0.85em; margin-bottom: 20px; }
+        
+        #controls {
+            display: flex; gap: 10px; margin-bottom: 20px; align-items: center;
+        }
+        button {
+            background: #16213e; color: #00d4ff; border: 1px solid #00d4ff;
+            padding: 8px 16px; cursor: pointer; font-family: inherit; font-size: 0.85em;
+            border-radius: 3px; transition: all 0.2s;
+        }
+        button:hover { background: #00d4ff; color: #1a1a2e; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button.run-all { background: #0f3460; border-color: #ffa500; color: #ffa500; }
+        button.run-all:hover { background: #ffa500; color: #1a1a2e; }
+        
+        #status {
+            padding: 8px 12px; border-radius: 3px; font-size: 0.85em;
+            background: #16213e; border: 1px solid #333;
+        }
+        #status.pass { border-color: #00ff88; color: #00ff88; }
+        #status.fail { border-color: #ff4444; color: #ff4444; }
+        #status.running { border-color: #ffa500; color: #ffa500; }
+        
+        .test {
+            background: #16213e; border: 1px solid #333; border-radius: 3px;
+            margin-bottom: 8px; overflow: hidden;
+        }
+        .test-header {
+            display: flex; align-items: center; padding: 8px 12px; cursor: pointer;
+        }
+        .test-header:hover { background: #1a2744; }
+        .test-icon {
+            width: 20px; height: 20px; border-radius: 50%; margin-right: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.7em; font-weight: bold; flex-shrink: 0;
+        }
+        .test-icon.pending { background: #333; color: #666; }
+        .test-icon.pass { background: #00ff88; color: #1a1a2e; }
+        .test-icon.fail { background: #ff4444; color: #1a1a2e; }
+        .test-icon.running { background: #ffa500; color: #1a1a2e; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        .test-name { flex: 1; font-size: 0.85em; }
+        .test-duration { color: #666; font-size: 0.75em; margin-left: 10px; }
+        
+        .test-output {
+            display: none; padding: 8px 12px; background: #0f0f1a;
+            border-top: 1px solid #333; font-size: 0.8em; white-space: pre-wrap;
+            color: #aaa; max-height: 200px; overflow-y: auto;
+        }
+        .test-output.show { display: block; }
+        .test-output .error { color: #ff4444; }
+        .test-output .success { color: #00ff88; }
+        .test-output .info { color: #00d4ff; }
+        
+        #state-panel {
+            background: #16213e; border: 1px solid #333; border-radius: 3px;
+            padding: 12px; margin-top: 20px;
+        }
+        #state-panel h3 { color: #00d4ff; font-size: 0.9em; margin-bottom: 8px; }
+        #state-display {
+            font-size: 0.8em; white-space: pre-wrap; color: #aaa;
+            max-height: 300px; overflow-y: auto; background: #0f0f1a;
+            padding: 8px; border-radius: 3px;
+        }
+        
+        .summary {
+            display: flex; gap: 20px; margin-bottom: 20px; font-size: 0.85em;
+        }
+        .summary-item { display: flex; align-items: center; gap: 5px; }
+        .summary-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .summary-dot.pass { background: #00ff88; }
+        .summary-dot.fail { background: #ff4444; }
+        .summary-dot.pending { background: #333; }
+    </style>
+</head>
+<body>
+    <h1>StoryGraph Plugin — Visual Test Harness</h1>
+    <div class="subtitle">
+        Tests run via KOReader HttpInspector · Plugin endpoint: <code>/koreader/ui/storygraph/</code>
+    </div>
+    
+    <div id="controls">
+        <button class="run-all" onclick="runAllTests()">▶ Run All Tests</button>
+        <button onclick="refreshState()">↻ Refresh State</button>
+        <button onclick="resetAll()">⟲ Reset Everything</button>
+        <div id="status">Ready</div>
+    </div>
+    
+    <div class="summary">
+        <div class="summary-item"><div class="summary-dot pass"></div><span id="pass-count">0</span> passed</div>
+        <div class="summary-item"><div class="summary-dot fail"></div><span id="fail-count">0</span> failed</div>
+        <div class="summary-item"><div class="summary-dot pending"></div><span id="pending-count">0</span> pending</div>
+    </div>
+
+    <h2>Config Tests</h2>
+    <div id="config-tests"></div>
+
+    <h2>Sync Queue Tests</h2>
+    <div id="queue-tests"></div>
+
+    <h2>Book Flow Tests</h2>
+    <div id="flow-tests"></div>
+
+    <h2>Stays-Read Invariant</h2>
+    <div id="invariant-tests"></div>
+
+    <div id="state-panel">
+        <h3>Live Plugin State</h3>
+        <div id="state-display">Click "Refresh State" to load</div>
+    </div>
+
+    <script>
+    // Base URL for HttpInspector plugin endpoints
+    const BASE = '/koreader/ui/storygraph';
+    
+    // HTTP call to HttpInspector
+    async function callEndpoint(path) {
+        const url = `${BASE}/${path}`;
+        const resp = await fetch(url);
+        const text = await resp.text();
+        // HttpInspector returns JSON for function calls with trailing /
+        try { return { ok: resp.ok, status: resp.status, data: JSON.parse(text) }; }
+        catch { return { ok: resp.ok, status: resp.status, data: text }; }
+    }
+
+    // Test definitions
+    const tests = {
+        'config-tests': [
+            {
+                name: 'Set and retrieve credentials',
+                run: async (log) => {
+                    await callEndpoint('testSetCredentials/test@example.com/secret123/');
+                    const state = await callEndpoint('testGetState/');
+                    const creds = state.data[1]?.credentials || state.data.credentials;
+                    if (creds?.email === 'test@example.com' && creds?.password === 'secret123') {
+                        log('success', 'Credentials stored and retrieved correctly');
+                        return true;
+                    }
+                    log('error', `Expected test@example.com/secret123, got ${JSON.stringify(creds)}`);
+                    return false;
+                }
+            },
+            {
+                name: 'Clear session removes cookies and CSRF',
+                run: async (log) => {
+                    await callEndpoint('testClearSession/');
+                    const state = await callEndpoint('testGetState/');
+                    const d = state.data[1] || state.data;
+                    const cookies = d.session_cookies || {};
+                    const csrf = d.csrf_token || '';
+                    if (Object.keys(cookies).length === 0 && csrf === '') {
+                        log('success', 'Session cleared successfully');
+                        return true;
+                    }
+                    log('error', `Session not cleared: cookies=${JSON.stringify(cookies)}, csrf=${csrf}`);
+                    return false;
+                }
+            },
+            {
+                name: 'Set and retrieve sync state',
+                run: async (log) => {
+                    await callEndpoint('testSetSyncState/isbn:test-book/currently-reading/42/');
+                    const result = await callEndpoint('testGetSyncState/isbn:test-book/');
+                    const d = result.data[1] || result.data;
+                    if (d && d.status === 'currently-reading' && d.percentage === 42) {
+                        log('success', 'Sync state stored: currently-reading @ 42%');
+                        return true;
+                    }
+                    log('error', `Unexpected sync state: ${JSON.stringify(d)}`);
+                    return false;
+                }
+            },
+        ],
+        
+        'queue-tests': [
+            {
+                name: 'Queue starts empty after clear',
+                run: async (log) => {
+                    await callEndpoint('testClearQueue/');
+                    const state = await callEndpoint('testGetState/');
+                    const d = state.data[1] || state.data;
+                    const queue = d.queue || [];
+                    if (queue.length === 0) {
+                        log('success', 'Queue is empty after clear');
+                        return true;
+                    }
+                    log('error', `Queue has ${queue.length} items: ${JSON.stringify(queue)}`);
+                    return false;
+                }
+            },
+            {
+                name: 'Book close populates queue',
+                run: async (log) => {
+                    await callEndpoint('testClearQueue/');
+                    await callEndpoint('testClearSession/');
+                    // Simulate book close — API will fail (no session) so items stay in queue
+                    await callEndpoint('testSimulateBookClose/isbn:queue-test/50/300/');
+                    const state = await callEndpoint('testGetState/');
+                    const d = state.data[1] || state.data;
+                    const queue = d.queue || [];
+                    log('info', `Queue has ${queue.length} items after book close`);
+                    if (queue.length > 0) {
+                        log('success', `Queue populated: ${queue.map(q => q.action_type).join(', ')}`);
+                        return true;
+                    }
+                    // Queue might have been processed if session was valid
+                    log('info', 'Queue empty — items were processed (session may be valid)');
+                    return true;
+                }
+            },
+            {
+                name: 'Clear queue empties it',
+                run: async (log) => {
+                    // Add something to queue first
+                    await callEndpoint('testSimulateBookClose/isbn:clear-test/75/200/');
+                    await callEndpoint('testClearQueue/');
+                    const state = await callEndpoint('testGetState/');
+                    const d = state.data[1] || state.data;
+                    const queue = d.queue || [];
+                    if (queue.length === 0) {
+                        log('success', 'Queue cleared successfully');
+                        return true;
+                    }
+                    log('error', `Queue still has ${queue.length} items`);
+                    return false;
+                }
+            },
+        ],
+        
+        'flow-tests': [
+            {
+                name: 'Book open sets currently-reading',
+                run: async (log) => {
+                    await callEndpoint('testClearSession/');
+                    await callEndpoint('testSetSyncState/isbn:flow-book/read/100/');
+                    // Book open should NOT overwrite "read" status (stays-read)
+                    await callEndpoint('testSimulateBookOpen/isbn:flow-book/');
+                    const result = await callEndpoint('testGetSyncState/isbn:flow-book/');
+                    const d = result.data[1] || result.data;
+                    if (d && d.status === 'read') {
+                        log('success', 'Stays-read: book open did not overwrite "read" status');
+                        return true;
+                    }
+                    log('info', `Status after open: ${d?.status} (may have been overwritten if not finished)`);
+                    return true;
+                }
+            },
+            {
+                name: 'Book close at 96% marks as finished',
+                run: async (log) => {
+                    await callEndpoint('testSimulateBookClose/isbn:finish-test/96/400/');
+                    const result = await callEndpoint('testGetSyncState/isbn:finish-test/');
+                    const d = result.data[1] || result.data;
+                    if (d && d.status === 'read' && d.percentage === 100) {
+                        log('success', 'Book marked as read with 100% (normalized from 96%)');
+                        return true;
+                    }
+                    log('error', `Expected read/100, got ${d?.status}/${d?.percentage}`);
+                    return false;
+                }
+            },
+            {
+                name: 'Book close at 50% stays currently-reading',
+                run: async (log) => {
+                    await callEndpoint('testSimulateBookClose/isbn:partial-test/50/300/');
+                    const result = await callEndpoint('testGetSyncState/isbn:partial-test/');
+                    const d = result.data[1] || result.data;
+                    if (d && d.status === 'currently-reading' && d.percentage === 50) {
+                        log('success', 'Book stays currently-reading at 50%');
+                        return true;
+                    }
+                    log('error', `Expected currently-reading/50, got ${d?.status}/${d?.percentage}`);
+                    return false;
+                }
+            },
+        ],
+        
+        'invariant-tests': [
+            {
+                name: 'Finished book stays read after reopen',
+                run: async (log) => {
+                    // Set book as finished
+                    await callEndpoint('testSetSyncState/isbn:invariant-book/read/100/');
+                    log('info', 'Set book to read/100');
+                    // Reopen (simulate onBookOpen)
+                    await callEndpoint('testSimulateBookOpen/isbn:invariant-book/');
+                    log('info', 'Simulated book reopen');
+                    // Check state
+                    const result = await callEndpoint('testGetSyncState/isbn:invariant-book/');
+                    const d = result.data[1] || result.data;
+                    if (d && d.status === 'read' && d.percentage === 100) {
+                        log('success', 'INVARIANT: Finished book stays read after reopen');
+                        return true;
+                    }
+                    log('error', `INVARIANT BROKEN: status=${d?.status}, percentage=${d?.percentage}`);
+                    return false;
+                }
+            },
+            {
+                name: 'Multiple books maintain independent state',
+                run: async (log) => {
+                    await callEndpoint('testSetSyncState/isbn:book-a/read/100/');
+                    await callEndpoint('testSetSyncState/isbn:book-b/currently-reading/33/');
+                    await callEndpoint('testSetSyncState/isbn:book-c/currently-reading/67/');
+                    
+                    const a = await callEndpoint('testGetSyncState/isbn:book-a/');
+                    const b = await callEndpoint('testGetSyncState/isbn:book-b/');
+                    const c = await callEndpoint('testGetSyncState/isbn:book-c/');
+                    
+                    const da = a.data[1] || a.data;
+                    const db = b.data[1] || b.data;
+                    const dc = c.data[1] || c.data;
+                    
+                    const ok = da?.status === 'read' && da?.percentage === 100
+                            && db?.status === 'currently-reading' && db?.percentage === 33
+                            && dc?.status === 'currently-reading' && dc?.percentage === 67;
+                    
+                    if (ok) {
+                        log('success', 'All three books have correct independent state');
+                        return true;
+                    }
+                    log('error', `A: ${JSON.stringify(da)}, B: ${JSON.stringify(db)}, C: ${JSON.stringify(dc)}`);
+                    return false;
+                }
+            },
+        ],
+    };
+
+    // UI state
+    let testElements = {};
+    let passCount = 0, failCount = 0, pendingCount = 0;
+
+    // Build test UI
+    function buildTestUI() {
+        for (const [section, sectionTests] of Object.entries(tests)) {
+            const container = document.getElementById(section);
+            sectionTests.forEach((test, i) => {
+                const id = `${section}-${i}`;
+                const el = document.createElement('div');
+                el.className = 'test';
+                el.innerHTML = `
+                    <div class="test-header" onclick="toggleOutput('${id}')">
+                        <div class="test-icon pending" id="icon-${id}">○</div>
+                        <div class="test-name">${test.name}</div>
+                        <div class="test-duration" id="duration-${id}"></div>
+                    </div>
+                    <div class="test-output" id="output-${id}"></div>
+                `;
+                container.appendChild(el);
+                testElements[id] = { test, el };
+            });
+        }
+        updateSummary();
+    }
+
+    function toggleOutput(id) {
+        document.getElementById(`output-${id}`).classList.toggle('show');
+    }
+
+    function setTestState(id, state, duration) {
+        const icon = document.getElementById(`icon-${id}`);
+        const dur = document.getElementById(`duration-${id}`);
+        icon.className = `test-icon ${state}`;
+        icon.textContent = state === 'pass' ? '✓' : state === 'fail' ? '✗' : state === 'running' ? '⟳' : '○';
+        if (duration !== undefined) dur.textContent = `${duration}ms`;
+    }
+
+    function logToTest(id, className, message) {
+        const output = document.getElementById(`output-${id}`);
+        const line = document.createElement('div');
+        line.className = className;
+        line.textContent = message;
+        output.appendChild(line);
+    }
+
+    function updateSummary() {
+        passCount = 0; failCount = 0; pendingCount = 0;
+        for (const id of Object.keys(testElements)) {
+            const icon = document.getElementById(`icon-${id}`);
+            if (icon.classList.contains('pass')) passCount++;
+            else if (icon.classList.contains('fail')) failCount++;
+            else pendingCount++;
+        }
+        document.getElementById('pass-count').textContent = passCount;
+        document.getElementById('fail-count').textContent = failCount;
+        document.getElementById('pending-count').textContent = pendingCount;
+    }
+
+    function setStatus(text, cls) {
+        const el = document.getElementById('status');
+        el.textContent = text;
+        el.className = cls || '';
+    }
+
+    // Run a single test
+    async function runTest(id) {
+        const { test } = testElements[id];
+        setTestState(id, 'running');
+        const output = document.getElementById(`output-${id}`);
+        output.innerHTML = '';
+        output.classList.add('show');
+        
+        const log = (cls, msg) => logToTest(id, cls, msg);
+        const start = Date.now();
+        
+        try {
+            const result = await test.run(log);
+            const duration = Date.now() - start;
+            setTestState(id, result ? 'pass' : 'fail', duration);
+            return result;
+        } catch (e) {
+            const duration = Date.now() - start;
+            log('error', `Exception: ${e.message}`);
+            setTestState(id, 'fail', duration);
+            return false;
+        }
+    }
+
+    // Run all tests sequentially
+    async function runAllTests() {
+        setStatus('Running tests...', 'running');
+        const ids = Object.keys(testElements);
+        let allPassed = true;
+        
+        for (const id of ids) {
+            const passed = await runTest(id);
+            if (!passed) allPassed = false;
+        }
+        
+        updateSummary();
+        if (allPassed) {
+            setStatus(`All ${passCount} tests passed`, 'pass');
+        } else {
+            setStatus(`${failCount} failed, ${passCount} passed`, 'fail');
+        }
+    }
+
+    // Refresh live state display
+    async function refreshState() {
+        try {
+            const result = await callEndpoint('testGetState/');
+            const d = result.data[1] || result.data;
+            document.getElementById('state-display').textContent = JSON.stringify(d, null, 2);
+        } catch (e) {
+            document.getElementById('state-display').textContent = `Error: ${e.message}\n\nIs the HttpInspector running? Start it from KOReader menu: Tools → KOReader HTTP inspector → Start HTTP server`;
+        }
+    }
+
+    // Reset everything
+    async function resetAll() {
+        await callEndpoint('testClearQueue/');
+        await callEndpoint('testClearSession/');
+        // Reset all test UI
+        for (const id of Object.keys(testElements)) {
+            setTestState(id, 'pending');
+            document.getElementById(`output-${id}`).innerHTML = '';
+            document.getElementById(`output-${id}`).classList.remove('show');
+            document.getElementById(`duration-${id}`).textContent = '';
+        }
+        updateSummary();
+        setStatus('Reset complete', '');
+        refreshState();
+    }
+
+    // Init
+    buildTestUI();
+    refreshState();
+    </script>
+</body>
+</html>

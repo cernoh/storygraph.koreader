@@ -1,5 +1,6 @@
 -- spec/spec_helper.lua
 -- Sets up package.path to find project modules and mocks KOReader dependencies
+-- Combines unit test mocks with integration test enhancements
 
 local spec_dir = debug.getinfo(1, "S").source:match("@(.+)/spec_helper") or "."
 local project_dir = spec_dir .. "/.."
@@ -11,6 +12,26 @@ package.path = project_dir .. "/?.lua;" .. project_dir .. "/?/init.lua;" .. pack
 local function make_memory_settings()
     local store = {}
     return {
+        open = function(self, path)
+            return setmetatable({}, {
+                __index = {
+                    readSetting = function(_, key, default)
+                        if store[key] ~= nil then
+                            return store[key]
+                        end
+                        return default
+                    end,
+                    saveSetting = function(_, key, value)
+                        store[key] = value
+                    end,
+                    delSetting = function(_, key)
+                        store[key] = nil
+                    end,
+                    flush = function() end,
+                    _store = store,
+                },
+            })
+        end,
         readSetting = function(_, key, default)
             if store[key] ~= nil then return store[key] end
             return default
@@ -22,13 +43,14 @@ local function make_memory_settings()
             store[key] = nil
         end,
         flush = function() end,
-        open = function() return make_memory_settings() end,
         _store = store,
     }
 end
 
--- Mock datastorage: dummy path (luasettings is fully in-memory)
-local mock_settings_dir = "/mock/settings/dir"
+-- Mock datastorage: use real tmpdir for integration tests
+local mock_settings_dir = os.tmpname()
+os.remove(mock_settings_dir)
+os.execute("mkdir -p " .. mock_settings_dir)
 
 package.preload["datastorage"] = function()
     return {
@@ -41,7 +63,9 @@ end
 package.preload["luasettings"] = function()
     local settings = make_memory_settings()
     return {
-        open = function() return settings end,
+        open = function(path)
+            return settings:open(path)
+        end,
         _new = make_memory_settings,
     }
 end
@@ -78,6 +102,12 @@ package.preload["ui/widget/container/widgetcontainer"] = function()
         extend = function(_, t)
             local obj = t or {}
             obj.init = obj.init or function() end
+            function obj:new(o)
+                o = o or {}
+                setmetatable(o, self)
+                self.__index = self
+                return o
+            end
             return obj
         end,
     }
@@ -90,8 +120,26 @@ end
 
 package.preload["ltn12"] = function()
     return {
-        sink = { table = function() return function() end end },
-        source = { string = function() return function() end end },
+        sink = {
+            table = function(t)
+                return function(chunk)
+                    if chunk then table.insert(t, chunk) end
+                    return 1
+                end
+            end,
+        },
+        source = {
+            string = function(s)
+                local done = false
+                return function()
+                    if not done then
+                        done = true
+                        return s
+                    end
+                    return nil
+                end
+            end,
+        },
     }
 end
 
@@ -99,22 +147,22 @@ package.preload["ssl.https"] = function()
     return { request = function() return nil, nil, nil end }
 end
 
--- Reset config files between tests
-local function reset_config()
-    -- Wipe the in-memory store for luasettings
+-- Reset helper: clears module cache and settings between tests
+local function reset_modules()
+    package.loaded["config"] = nil
+    package.loaded["sync"] = nil
+    package.loaded["api"] = nil
     local luasettings = require("luasettings")
     local settings = luasettings.open()
     if settings._store then
-        for k, _ in pairs(settings._store) do
+        for k in pairs(settings._store) do
             settings._store[k] = nil
         end
     end
-    -- Force config module reload
-    package.loaded["config"] = nil
-    package.loaded["sync"] = nil
 end
 
 return {
-    reset_config = reset_config,
+    reset = reset_modules,
+    reset_config = reset_modules,
     settings_dir = mock_settings_dir,
 }

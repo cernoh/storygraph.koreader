@@ -6,4 +6,11 @@ return {
     verbose = true,
     lpath = "./spec/?.lua",
   },
+  integration = {
+    root = "spec/integration",
+    helper = "spec_helper",
+    pattern = "_spec%.lua$",
+    verbose = true,
+    lpath = "./spec/?.lua;./spec/integration/?.lua",
+  },
 }
