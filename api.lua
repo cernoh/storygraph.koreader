@@ -222,7 +222,7 @@ function Api.updateProgress(book_id, percentage, page_count, last_percentage)
     return true
 end
 
--- Expose pure helpers for testing
+-- Export helpers for testing
 Api._urlencode = urlencode
 Api._extractCsrfToken = extractCsrfToken
 Api._parseCookies = parseCookies

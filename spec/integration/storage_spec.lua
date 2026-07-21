@@ -1,0 +1,107 @@
+-- Integration test: real KOReader storage layer
+-- Proves config.lua persists credentials, sync state, cookies, etc. to real files
+-- Uses KOReader's actual datastorage + luasettings modules
+
+require("spec_helper")
+
+describe("Config with real KOReader storage", function()
+    local Config, helper
+
+    before_each(function()
+        helper = require("spec.integration.spec_helper")
+        helper.full_reset()  -- wipe files + reload modules
+        Config = require("config")
+    end)
+
+    describe("credentials", function()
+        it("stores and retrieves credentials", function()
+            Config.setCredentials("user@test.com", "pass123")
+            local creds = Config.getCredentials()
+            assert.are.equal("user@test.com", creds.email)
+            assert.are.equal("pass123", creds.password)
+        end)
+
+        it("reads credentials back after module reload (file persistence)", function()
+            Config.setCredentials("persist@test.com", "realpass")
+            -- Reload modules only — files stay on disk
+            helper.reset()
+            Config = require("config")
+            local creds = Config.getCredentials()
+            assert.are.equal("persist@test.com", creds.email)
+            assert.are.equal("realpass", creds.password)
+        end)
+
+        it("overwrites existing credentials", function()
+            Config.setCredentials("old@test.com", "oldpass")
+            Config.setCredentials("new@test.com", "newpass")
+            helper.reset()
+            Config = require("config")
+            local creds = Config.getCredentials()
+            assert.are.equal("new@test.com", creds.email)
+            assert.are.equal("newpass", creds.password)
+        end)
+    end)
+
+    describe("sync state persists across reloads", function()
+        it("survives module reload", function()
+            Config.setLastSyncState("isbn:123", "currently-reading", 42)
+            helper.reset()
+            Config = require("config")
+            local state = Config.getLastSyncState("isbn:123")
+            assert.truthy(state, "sync state should persist to disk")
+            assert.are.equal("currently-reading", state.status)
+            assert.are.equal(42, state.percentage)
+            assert.truthy(state.timestamp)
+        end)
+
+        it("stores multiple books independently", function()
+            Config.setLastSyncState("book1", "read", 100)
+            Config.setLastSyncState("book2", "currently-reading", 50)
+            helper.reset()
+            Config = require("config")
+            local s1 = Config.getLastSyncState("book1")
+            local s2 = Config.getLastSyncState("book2")
+            assert.truthy(s1)
+            assert.truthy(s2)
+            assert.are.equal("read", s1.status)
+            assert.are.equal(100, s1.percentage)
+            assert.are.equal("currently-reading", s2.status)
+            assert.are.equal(50, s2.percentage)
+        end)
+    end)
+
+    describe("session cookies persist", function()
+        it("stores and retrieves cookies across reloads", function()
+            Config.setSessionCookies({
+                _storygraph_session = "session_abc",
+                remember_user_token = "remember_xyz",
+            })
+            helper.reset()
+            Config = require("config")
+            local cookies = Config.getSessionCookies()
+            assert.are.equal("session_abc", cookies._storygraph_session)
+            assert.are.equal("remember_xyz", cookies.remember_user_token)
+        end)
+    end)
+
+    describe("book mapping persists", function()
+        it("caches ISBN-to-UUID mapping across reloads", function()
+            Config.setBookMapping("isbn:978-0-123", "uuid-abc-def")
+            helper.reset()
+            Config = require("config")
+            assert.are.equal("uuid-abc-def", Config.getBookMapping("isbn:978-0-123"))
+        end)
+    end)
+
+    describe("clearSession removes data from disk", function()
+        it("actually deletes the data", function()
+            Config.setSessionCookies({ _storygraph_session = "abc" })
+            Config.setCsrfToken("token123")
+            Config.clearSession()
+            helper.reset()
+            Config = require("config")
+            assert.are.same({}, Config.getSessionCookies())
+            assert.are.equal("", Config.getCsrfToken())
+        end)
+    end)
+end)
