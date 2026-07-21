@@ -46,7 +46,7 @@
         storygraphCheckLint = pkgs.writeShellScriptBin "check-lint" ''
           set -e
           cd "$(git rev-parse --show-toplevel)"
-          exec ${pkgs.luacheck}/bin/luacheck *.lua
+          exec ${pkgs.lua51Packages.luacheck}/bin/luacheck *.lua spec/*.lua
         '';
 
         storygraphCheckTypes = pkgs.writeShellScriptBin "check-types" ''
@@ -61,7 +61,7 @@
           nativeBuildInputs = with pkgs; [
             git
             lua-language-server
-            luacheck
+            lua51Packages.luacheck
             luajit
             luajitPackages.busted
             python3
