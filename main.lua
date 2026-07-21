@@ -208,4 +208,54 @@ function StoryGraphPlugin:manualSync()
     end
 end
 
+-- Debug/test interface for HttpInspector visual tests
+-- These methods expose internal state for programmatic testing
+
+function StoryGraphPlugin:testGetState()
+    return {
+        credentials = Config.getCredentials(),
+        session_cookies = Config.getSessionCookies(),
+        csrf_token = Config.getCsrfToken(),
+        queue = Sync.getQueue(),
+    }
+end
+
+function StoryGraphPlugin:testSetCredentials(email, password)
+    Config.setCredentials(email, password)
+    return "ok"
+end
+
+function StoryGraphPlugin:testClearSession()
+    Config.clearSession()
+    return "ok"
+end
+
+function StoryGraphPlugin:testSimulateBookOpen(book_id)
+    Sync.onBookOpen(book_id)
+    return "ok"
+end
+
+function StoryGraphPlugin:testSimulateBookClose(book_id, percentage, page_count)
+    Sync.onBookClose(book_id, percentage, page_count)
+    return "ok"
+end
+
+function StoryGraphPlugin:testClearQueue()
+    Sync.clearQueue()
+    return "ok"
+end
+
+function StoryGraphPlugin:testManualSync()
+    return Sync.processQueue()
+end
+
+function StoryGraphPlugin:testGetSyncState(book_id)
+    return Config.getLastSyncState(book_id)
+end
+
+function StoryGraphPlugin:testSetSyncState(book_id, status, percentage)
+    Config.setLastSyncState(book_id, status, percentage)
+    return "ok"
+end
+
 return StoryGraphPlugin

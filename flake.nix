@@ -36,10 +36,16 @@
             [ -f "$f" ] && ln -sf "$f" "$PLUGIN_DIR/$(basename "$f")"
           done
 
+          # Symlink web directory for HttpInspector visual test harness
+          rm -rf "$KO_HOME/web"
+          ln -sf "$PLUGIN_SRC/web" "$KO_HOME/web"
+
           export KO_HOME
           echo "==> KO_HOME=$KO_HOME"
           echo "==> Plugin files in $PLUGIN_DIR:"
           ls -la "$PLUGIN_DIR/"
+          echo "==> Web test harness at $KO_HOME/web/"
+          ls -la "$KO_HOME/web/"
           exec ${koreader}/bin/koreader "$@"
         '';
 
@@ -131,6 +137,11 @@
             echo "  check-lint   — run luacheck on *.lua"
             echo "  check-types  — run lua-language-server diagnostics"
             echo "  run-tests    — run test suite (unit, integration, or all)"
+            echo ""
+            echo "Visual tests:"
+            echo "  1. Run 'dev' to start KOReader with the plugin"
+            echo "  2. Enable HttpInspector: Menu > Tools > KOReader HTTP inspector > Start"
+            echo "  3. Open http://localhost:8080/ in your browser"
           '';
         };
       }
