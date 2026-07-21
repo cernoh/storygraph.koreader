@@ -10,11 +10,13 @@ jobs:
   api-health:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      UA: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     steps:
       - name: Check StoryGraph login page reachable
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
-            -A "Mozilla/5.0" \
+            -A "$UA" \
             "https://app.thestorygraph.com/users/sign_in")
           echo "Login page HTTP status: $code"
           [ "$code" = "200" ] || exit 1
@@ -22,7 +24,7 @@ jobs:
       - name: Check ISBN search endpoint responds
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
-            -A "Mozilla/5.0" \
+            -A "$UA" \
             "https://app.thestorygraph.com/search?query=9780140328721")
           echo "Search endpoint HTTP status: $code"
           # 200 = results page, 302 = redirect to login (both acceptable)
