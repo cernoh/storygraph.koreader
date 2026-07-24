@@ -14,10 +14,11 @@ local BASE_URL = "https://app.thestorygraph.com"
 -- Helper: URL encode
 local function urlencode(str)
     if str then
-        str = string.gsub(str, "\n", "\r\n")
-        str = string.gsub(str, "([^%w%-%.%_%~])", function(c)
+        str = str:gsub("\r?\n", "\r\n")
+        str = str:gsub("([^%w %-%_%.%~])", function(c)
             return string.format("%%%02X", string.byte(c))
         end)
+        str = str:gsub(" ", "%%20")
     end
     return str
 end
@@ -31,11 +32,13 @@ end
 -- Helper: Parse cookies from Set-Cookie headers
 local function parseCookies(response_headers)
     local cookies = {}
-    for key, value in pairs(response_headers) do
-        if key:lower() == "set-cookie" then
-            local name, val = value:match("([^=]+)=([^;]+)")
-            if name and val then
-                cookies[name] = val
+    if response_headers then
+        for k, v in pairs(response_headers) do
+            if k:lower() == "set-cookie" then
+                local name, value = v:match("^([^=]+)=([^;]+)")
+                if name and value then
+                    cookies[name] = value
+                end
             end
         end
     end
@@ -51,6 +54,37 @@ local function buildCookieHeader(cookies)
     return table.concat(parts, "; ")
 end
 
+-- Helper: Format HTTP failure, surfacing Cloudflare-specific codes
+local function formatHttpError(action, code, body, response_headers)
+    local cf_error, cf_ray
+    if response_headers then
+        for k, v in pairs(response_headers) do
+            if k:lower() == "cf-ray" then
+                cf_ray = v
+                break
+            end
+        end
+    end
+    if body then
+        cf_error = body:match("Error%s+(%d%d%d%d?)")
+            or body:match("error%s+code[%s:]*(%d%d%d%d?)")
+            or body:match("cloudflare.-(%d%d%d%d?)")
+    end
+
+    local parts = { action .. " failed" }
+    if cf_error then
+        table.insert(parts, "Cloudflare error " .. cf_error)
+    elseif cf_ray then
+        table.insert(parts, "Cloudflare blocked request")
+    end
+    if cf_ray then
+        table.insert(parts, "ray " .. cf_ray)
+    end
+    table.insert(parts, "HTTP " .. tostring(code or "unknown"))
+
+    return table.concat(parts, " — ")
+end
+
 -- Helper: HTTP GET request
 local function httpGet(url, cookies)
     local response_body = {}
@@ -58,13 +92,13 @@ local function httpGet(url, cookies)
         ["Cookie"] = buildCookieHeader(cookies or {}),
         ["User-Agent"] = "KOReader/StoryGraph Plugin",
     }
-    
+
     local res, code, response_headers = https.request{
         url = url,
         headers = headers,
         sink = ltn12.sink.table(response_body),
     }
-    
+
     return table.concat(response_body), code, response_headers
 end
 
@@ -79,12 +113,12 @@ local function httpPost(url, body, cookies, csrf_token)
         ["Origin"] = BASE_URL,
         ["Referer"] = BASE_URL,
     }
-    
+
     if csrf_token then
         headers["x-csrf-token"] = csrf_token
         headers["x-requested-with"] = "XMLHttpRequest"
     end
-    
+
     local res, code, response_headers = https.request{
         url = url,
         method = "POST",
@@ -92,7 +126,7 @@ local function httpPost(url, body, cookies, csrf_token)
         source = ltn12.source.string(body),
         sink = ltn12.sink.table(response_body),
     }
-    
+
     return table.concat(response_body), code, response_headers
 end
 
@@ -102,18 +136,18 @@ function Api.login()
     if not creds.email or not creds.password then
         return false, "No credentials configured"
     end
-    
+
     -- Step 1: GET login page to get initial CSRF token
-    local html, code = httpGet(BASE_URL .. "/users/sign_in")
+    local html, code, headers = httpGet(BASE_URL .. "/users/sign_in")
     if not html or code ~= 200 then
-        return false, "Failed to load login page"
+        return false, formatHttpError("Login page load", code, html, headers)
     end
-    
+
     local csrf_token = extractCsrfToken(html)
     if not csrf_token then
         return false, "Could not extract CSRF token"
     end
-    
+
     -- Step 2: POST login
     local body = string.format(
         "authenticity_token=%s&user[email]=%s&user[password]=%s&user[remember_me]=1&return_to=",
@@ -121,21 +155,21 @@ function Api.login()
         urlencode(creds.email),
         urlencode(creds.password)
     )
-    
-    local response, status, headers = httpPost(BASE_URL .. "/users/sign_in", body, {})
-    
+
+    local response, status, post_headers = httpPost(BASE_URL .. "/users/sign_in", body, {})
+
     if status ~= 303 and status ~= 200 then
-        return false, "Login failed with status " .. tostring(status)
+        return false, formatHttpError("Login", status, response, post_headers)
     end
-    
+
     -- Step 3: Extract session cookies
-    local cookies = parseCookies(headers)
+    local cookies = parseCookies(post_headers)
     if not cookies["_storygraph_session"] then
         return false, "Login failed: no session cookie"
     end
-    
+
     Config.setSessionCookies(cookies)
-    
+
     -- Step 4: Follow redirect to get new CSRF token
     local home_html, home_code = httpGet(BASE_URL .. "/", cookies)
     if home_html and home_code == 200 then
@@ -144,7 +178,7 @@ function Api.login()
             Config.setCsrfToken(new_csrf)
         end
     end
-    
+
     logger.info("StoryGraph: Login successful")
     return true
 end
@@ -153,12 +187,12 @@ end
 function Api.searchByISBN(isbn)
     local cookies = Config.getSessionCookies()
     local url = BASE_URL .. "/search?search_term=" .. urlencode(isbn) .. "&button="
-    
-    local html, code = httpGet(url, cookies)
+
+    local html, code, headers = httpGet(url, cookies)
     if not html or code ~= 200 then
-        return nil, "Search failed"
+        return nil, formatHttpError("Search", code, html, headers)
     end
-    
+
     -- Extract book UUIDs from search results
     local books = {}
     for uuid, title_info in html:gmatch('href="/books/([a-f0-9%-]+)"[^>]*>.-<h1[^>]*>(.-)</h1>') do
@@ -171,11 +205,11 @@ function Api.searchByISBN(isbn)
             })
         end
     end
-    
+
     if #books == 0 then
         return nil, "No books found for ISBN"
     end
-    
+
     return books
 end
 
@@ -183,18 +217,18 @@ end
 function Api.updateStatus(book_id, status)
     local cookies = Config.getSessionCookies()
     local csrf_token = Config.getCsrfToken()
-    
+
     local url = string.format("%s/update-status.js?book_id=%s&status=%s",
         BASE_URL, book_id, urlencode(status))
-    
+
     local body = "authenticity_token=" .. urlencode(csrf_token)
-    
-    local response, code = httpPost(url, body, cookies, csrf_token)
-    
+
+    local response, code, headers = httpPost(url, body, cookies, csrf_token)
+
     if code ~= 200 then
-        return false, "Status update failed with status " .. tostring(code)
+        return false, formatHttpError("Status update", code, response, headers)
     end
-    
+
     logger.info("StoryGraph: Updated status to " .. status)
     return true
 end
@@ -203,7 +237,7 @@ end
 function Api.updateProgress(book_id, percentage, page_count, last_percentage)
     local cookies = Config.getSessionCookies()
     local csrf_token = Config.getCsrfToken()
-    
+
     local body = string.format(
         "read_status[progress_number]=%d&read_status[progress_type]=percentage&read_status[book_num_of_pages]=%d&read_status[last_reached_percent]=%d&book_id=%s&on_book_page=true&commit=Save",
         percentage,
@@ -211,13 +245,13 @@ function Api.updateProgress(book_id, percentage, page_count, last_percentage)
         last_percentage or 0,
         book_id
     )
-    
-    local response, code = httpPost(BASE_URL .. "/update-progress", body, cookies, csrf_token)
-    
+
+    local response, code, headers = httpPost(BASE_URL .. "/update-progress", body, cookies, csrf_token)
+
     if code ~= 200 then
-        return false, "Progress update failed with status " .. tostring(code)
+        return false, formatHttpError("Progress update", code, response, headers)
     end
-    
+
     logger.info("StoryGraph: Updated progress to " .. percentage .. "%")
     return true
 end
@@ -227,5 +261,6 @@ Api._urlencode = urlencode
 Api._extractCsrfToken = extractCsrfToken
 Api._parseCookies = parseCookies
 Api._buildCookieHeader = buildCookieHeader
+Api._formatHttpError = formatHttpError
 
 return Api

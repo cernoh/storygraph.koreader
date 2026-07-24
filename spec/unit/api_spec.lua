@@ -115,4 +115,30 @@ describe("Api pure helpers", function()
             assert.are.equal("", header)
         end)
     end)
+
+    describe("_formatHttpError", function()
+        it("extracts Cloudflare error code and ray ID from body and headers", function()
+            local body = '<title>Attention Required! | Cloudflare</title><div class="cf-error-overview">Error 1020</div>'
+            local headers = { ["cf-ray"] = "1234567890abcdef-ORD" }
+            local err = Api._formatHttpError("Status update", 403, body, headers)
+            assert.truthy(err:find("Status update failed"))
+            assert.truthy(err:find("Cloudflare error 1020"))
+            assert.truthy(err:find("ray 1234567890abcdef%-ORD"))
+            assert.truthy(err:find("HTTP 403"))
+        end)
+
+        it("reports ray ID when no error code is found", function()
+            local headers = { ["CF-Ray"] = "abcdef1234567890-SFO" }
+            local err = Api._formatHttpError("Login", 403, "Forbidden", headers)
+            assert.truthy(err:find("Cloudflare blocked request"))
+            assert.truthy(err:find("ray abcdef1234567890%-SFO"))
+        end)
+
+        it("falls back to HTTP status when no Cloudflare markers present", function()
+            local err = Api._formatHttpError("Search", 500, "Internal Server Error", {})
+            assert.truthy(err:find("Search failed"))
+            assert.truthy(err:find("HTTP 500"))
+            assert.is_nil(err:find("Cloudflare"))
+        end)
+    end)
 end)

@@ -196,14 +196,14 @@ end
 
 -- Manual sync trigger
 function StoryGraphPlugin:manualSync()
-    local success = Sync.processQueue()
+    local success, err = Sync.processQueue()
     if success then
         UIManager:show(InfoMessage:new{
             text = "Sync successful",
         })
     else
         UIManager:show(InfoMessage:new{
-            text = "Sync failed - will retry later",
+            text = "Sync failed: " .. (err or "will retry later"),
         })
     end
 end
