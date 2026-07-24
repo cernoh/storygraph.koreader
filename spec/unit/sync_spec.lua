@@ -213,6 +213,24 @@ describe("Sync", function()
             queue = require("luasettings").open():readSetting("storygraph_queue", {})
             assert.are.equal(0, #queue)
         end)
+
+        it("returns the first error message when actions fail", function()
+            package.loaded["api"] = nil
+            package.preload["api"] = function()
+                return {
+                    login = function() return true end,
+                    updateStatus = function() return false, "Cloudflare error 1020 — HTTP 403" end,
+                    updateProgress = function() return true end,
+                }
+            end
+            package.loaded["sync"] = nil
+            Sync = require("sync")
+
+            Sync.queueAction("book1", "status", { status = "read" })
+            local ok, err = Sync.processQueue()
+            assert.is_false(ok)
+            assert.are.equal("Cloudflare error 1020 — HTTP 403", err)
+        end)
     end)
 
     describe("clearQueue", function()

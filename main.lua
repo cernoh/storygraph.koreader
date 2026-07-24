@@ -27,8 +27,40 @@ function StoryGraphPlugin:onReaderReady()
     if book_id then
         -- Resolve ISBN to StoryGraph edition UUID
         local storygraph_id = self:resolveStoryGraphId(book_id)
-        Sync.onBookOpen(storygraph_id or book_id)
+        local sg_id = storygraph_id or book_id
+        Sync.onBookOpen(sg_id)
+        self:showStoryGraphStatus(sg_id)
     end
+end
+
+-- Show current StoryGraph status and progress
+function StoryGraphPlugin:showStoryGraphStatus(book_id)
+    local sync_state = Config.getLastSyncState(book_id)
+    local message
+    
+    if not sync_state then
+        message = "StoryGraph: Not synced yet"
+    else
+        local status_labels = {
+            ["currently-reading"] = "Currently Reading",
+            ["read"] = "Finished",
+            ["own"] = "Owned",
+        }
+        
+        local status_text = status_labels[sync_state.status] or sync_state.status
+        local progress_text = string.format("%.1f%%", sync_state.percentage or 0)
+        
+        message = string.format(
+            "StoryGraph Status:\n\n%s\n%s",
+            status_text,
+            progress_text
+        )
+    end
+    
+    UIManager:show(InfoMessage:new{
+        text = message,
+        timeout = 3,
+    })
 end
 
 
@@ -196,14 +228,14 @@ end
 
 -- Manual sync trigger
 function StoryGraphPlugin:manualSync()
-    local success = Sync.processQueue()
+    local success, err = Sync.processQueue()
     if success then
         UIManager:show(InfoMessage:new{
             text = "Sync successful",
         })
     else
         UIManager:show(InfoMessage:new{
-            text = "Sync failed - will retry later",
+            text = "Sync failed: " .. (err or "will retry later"),
         })
     end
 end
