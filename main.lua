@@ -14,6 +14,14 @@ local StoryGraphPlugin = WidgetContainer:extend{
     name = "storygraph",
 }
 
+local status_labels = {
+    ["currently-reading"] = "Currently Reading",
+    ["read"] = "Finished",
+    ["own"] = "Owned",
+    ["want-to-read"] = "Want to Read",
+    ["did-not-finish"] = "Did Not Finish",
+}
+
 function StoryGraphPlugin:init()
     self.ui.menu:registerToMainMenu(self)
     
@@ -28,35 +36,42 @@ function StoryGraphPlugin:onReaderReady()
         -- Resolve ISBN to StoryGraph edition UUID
         local storygraph_id = self:resolveStoryGraphId(book_id)
         local sg_id = storygraph_id or book_id
-        Sync.onBookOpen(sg_id)
         self:showStoryGraphStatus(sg_id)
+        Sync.onBookOpen(sg_id)
     end
 end
 
 -- Show current StoryGraph status and progress
 function StoryGraphPlugin:showStoryGraphStatus(book_id)
-    local sync_state = Config.getLastSyncState(book_id)
     local message
-    
-    if not sync_state then
-        message = "StoryGraph: Not synced yet"
+    local state, err = Api.getBookState(book_id)
+    if state then
+        if state.registered then
+            local status_text = status_labels[state.status] or "Registered"
+            local progress_text = state.percentage and string.format("%d%%", state.percentage) or "Unknown"
+            message = string.format(
+                "StoryGraph Status:\n\nRegistered: Yes\nStatus: %s\nProgress: %s",
+                status_text,
+                progress_text
+            )
+        else
+            message = "StoryGraph Status:\n\nRegistered: No\nProgress: Not tracked"
+        end
     else
-        local status_labels = {
-            ["currently-reading"] = "Currently Reading",
-            ["read"] = "Finished",
-            ["own"] = "Owned",
-        }
-        
-        local status_text = status_labels[sync_state.status] or sync_state.status
-        local progress_text = string.format("%.1f%%", sync_state.percentage or 0)
-        
-        message = string.format(
-            "StoryGraph Status:\n\n%s\n%s",
-            status_text,
-            progress_text
-        )
+        local sync_state = Config.getLastSyncState(book_id)
+        if sync_state then
+            local status_text = status_labels[sync_state.status] or sync_state.status
+            local progress_text = string.format("%d%%", sync_state.percentage or 0)
+            message = string.format(
+                "StoryGraph Status (cached):\n\nStatus: %s\nProgress: %s",
+                status_text,
+                progress_text
+            )
+        else
+            message = "StoryGraph: Could not load status" .. (err and (": " .. err) or "")
+        end
     end
-    
+
     UIManager:show(InfoMessage:new{
         text = message,
         timeout = 3,
@@ -157,6 +172,12 @@ function StoryGraphPlugin:addToMainMenu(menu_items)
                 end,
             },
             {
+                text = "Check login status",
+                callback = function()
+                    self:checkLoginStatus()
+                end,
+            },
+            {
                 text = "Clear sync queue",
                 callback = function()
                     Sync.clearQueue()
@@ -238,6 +259,32 @@ function StoryGraphPlugin:manualSync()
             text = "Sync failed: " .. (err or "will retry later"),
         })
     end
+end
+
+-- Check whether StoryGraph session is currently logged in
+function StoryGraphPlugin:checkLoginStatus()
+    local status, err = Api.getLoginStatus()
+    local message
+
+    if status then
+        if not status.configured then
+            message = "StoryGraph Login:\n\nCredentials: Not configured\nLogged in: No"
+        elseif status.logged_in then
+            message = "StoryGraph Login:\n\nCredentials: Configured\nLogged in: Yes"
+        else
+            message = "StoryGraph Login:\n\nCredentials: Configured\nLogged in: No"
+        end
+    else
+        message = "StoryGraph Login:\n\nCould not verify login status"
+        if err then
+            message = message .. ": " .. err
+        end
+    end
+
+    UIManager:show(InfoMessage:new{
+        text = message,
+        timeout = 3,
+    })
 end
 
 -- Debug/test interface for HttpInspector visual tests

@@ -141,4 +141,50 @@ describe("Api pure helpers", function()
             assert.is_nil(err:find("Cloudflare"))
         end)
     end)
+
+    describe("_extractBookState", function()
+        it("parses registered state with status and percentage", function()
+            local html = [[
+                <div class="progress-tracker-pane" data-current-status="currently-reading"></div>
+                <input name="read_status[progress_number]" value="42" />
+            ]]
+            local state = Api._extractBookState(html)
+            assert.are.equal(true, state.registered)
+            assert.are.equal("currently-reading", state.status)
+            assert.are.equal(42, state.percentage)
+        end)
+
+        it("detects unregistered state when no signals are present", function()
+            local html = "<html><body><h1>Book page</h1></body></html>"
+            local state = Api._extractBookState(html)
+            assert.are.equal(false, state.registered)
+            assert.is_nil(state.status)
+            assert.is_nil(state.percentage)
+        end)
+
+        it("clamps parsed percentage to 100", function()
+            local html = [[
+                <input name="read_status[progress_number]" value="135" />
+            ]]
+            local state = Api._extractBookState(html)
+            assert.are.equal(100, state.percentage)
+        end)
+    end)
+
+    describe("_extractLoginState", function()
+        it("returns true when sign-out markers are present", function()
+            local html = '<a href="/users/sign_out" data-method="delete">Sign out</a>'
+            assert.is_true(Api._extractLoginState(html))
+        end)
+
+        it("returns false when sign-in markers are present", function()
+            local html = '<a href="/users/sign_in">Sign in</a>'
+            assert.is_false(Api._extractLoginState(html))
+        end)
+
+        it("returns nil for unknown page shape", function()
+            local html = "<html><body><h1>StoryGraph</h1></body></html>"
+            assert.is_nil(Api._extractLoginState(html))
+        end)
+    end)
 end)

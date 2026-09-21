@@ -10,6 +10,13 @@ local logger = require("logger")
 local Api = {}
 
 local BASE_URL = "https://app.thestorygraph.com"
+local KNOWN_STATUSES = {
+    ["currently-reading"] = true,
+    ["read"] = true,
+    ["own"] = true,
+    ["want-to-read"] = true,
+    ["did-not-finish"] = true,
+}
 
 -- Helper: URL encode
 local function urlencode(str)
@@ -52,6 +59,80 @@ local function buildCookieHeader(cookies)
         table.insert(parts, name .. "=" .. value)
     end
     return table.concat(parts, "; ")
+end
+
+-- Helper: Parse current StoryGraph status/progress from a book page
+local function extractBookState(html)
+    if not html or html == "" then
+        return nil
+    end
+
+    local status_patterns = {
+        'data%-current%-status="([%w%-]+)"',
+        'data%-read%-status="([%w%-]+)"',
+        'name="read_status%[status%]"[^>]-value="([%w%-]+)"',
+        'status=([%w%-]+)"[^>]-aria%-pressed="true"',
+        'status=([%w%-]+)"[^>]-is%-active',
+        'status=([%w%-]+)"[^>]-active',
+    }
+
+    local status
+    for _, pattern in ipairs(status_patterns) do
+        local candidate = html:match(pattern)
+        if candidate and KNOWN_STATUSES[candidate] then
+            status = candidate
+            break
+        end
+    end
+
+    local percentage_patterns = {
+        'name="read_status%[progress_number%]"[^>]-value="(%d+)"',
+        'name="read_status%[last_reached_percent%]"[^>]-value="(%d+)"',
+    }
+
+    local percentage
+    for _, pattern in ipairs(percentage_patterns) do
+        local candidate = html:match(pattern)
+        if candidate then
+            percentage = tonumber(candidate)
+            break
+        end
+    end
+
+    if percentage and percentage > 100 then
+        percentage = 100
+    end
+
+    local registered = status ~= nil
+        or percentage ~= nil
+        or html:find("progress%-tracker%-pane") ~= nil
+
+    return {
+        registered = registered,
+        status = status,
+        percentage = percentage,
+    }
+end
+
+-- Helper: Detect whether home page HTML indicates logged-in session
+local function extractLoginState(html)
+    if not html or html == "" then
+        return nil
+    end
+
+    if html:find("/users/sign_out", 1, true)
+        or html:find("Sign out", 1, true)
+        or html:find("Log out", 1, true) then
+        return true
+    end
+
+    if html:find("/users/sign_in", 1, true)
+        or html:find("Sign in", 1, true)
+        or html:find("Log in", 1, true) then
+        return false
+    end
+
+    return nil
 end
 
 -- Helper: Format HTTP failure, surfacing Cloudflare-specific codes
@@ -256,11 +337,85 @@ function Api.updateProgress(book_id, percentage, page_count, last_percentage)
     return true
 end
 
+-- Check whether current session is logged in
+function Api.getLoginStatus()
+    local creds = Config.getCredentials()
+    if not creds.email or creds.email == "" or not creds.password or creds.password == "" then
+        return {
+            configured = false,
+            logged_in = false,
+        }
+    end
+
+    local cookies = Config.getSessionCookies()
+    if not cookies["_storygraph_session"] then
+        return {
+            configured = true,
+            logged_in = false,
+        }
+    end
+
+    local html, code, headers = httpGet(BASE_URL .. "/", cookies)
+    if code == 401 or code == 403 then
+        return {
+            configured = true,
+            logged_in = false,
+        }
+    end
+
+    if not html or code ~= 200 then
+        return nil, formatHttpError("Login state lookup", code, html, headers)
+    end
+
+    local logged_in = extractLoginState(html)
+    if logged_in == nil then
+        -- Fallback heuristic for unknown page shape
+        logged_in = html:find("/users/sign_in", 1, true) == nil
+    end
+
+    return {
+        configured = true,
+        logged_in = logged_in,
+    }
+end
+
+-- Fetch current reading state from StoryGraph for a specific book
+function Api.getBookState(book_id)
+    local cookies = Config.getSessionCookies()
+    if not cookies["_storygraph_session"] then
+        local ok, err = Api.login()
+        if not ok then
+            return nil, err
+        end
+        cookies = Config.getSessionCookies()
+    end
+
+    local url = BASE_URL .. "/books/" .. urlencode(book_id)
+    local html, code, headers = httpGet(url, cookies)
+
+    if code == 401 or code == 403 then
+        local ok, err = Api.login()
+        if not ok then
+            return nil, err
+        end
+        cookies = Config.getSessionCookies()
+        html, code, headers = httpGet(url, cookies)
+    end
+
+    if not html or code ~= 200 then
+        return nil, formatHttpError("Book state lookup", code, html, headers)
+    end
+
+    return extractBookState(html)
+end
+
 -- Export helpers for testing
 Api._urlencode = urlencode
 Api._extractCsrfToken = extractCsrfToken
 Api._parseCookies = parseCookies
 Api._buildCookieHeader = buildCookieHeader
 Api._formatHttpError = formatHttpError
+Api._extractBookState = extractBookState
+Api._extractLoginState = extractLoginState
 
 return Api

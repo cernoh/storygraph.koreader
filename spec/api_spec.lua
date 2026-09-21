@@ -111,4 +111,36 @@ describe("Api pure helpers", function()
             assert.are.equal("", Api._buildCookieHeader({}))
         end)
     end)
+
+    describe("_extractBookState", function()
+        it("parses status and progress from book page HTML", function()
+            local html = [[
+                <div class="progress-tracker-pane" data-current-status="read"></div>
+                <input name="read_status[progress_number]" value="100" />
+            ]]
+            local state = Api._extractBookState(html)
+            assert.are.equal(true, state.registered)
+            assert.are.equal("read", state.status)
+            assert.are.equal(100, state.percentage)
+        end)
+
+        it("returns not registered when no status/progress markers exist", function()
+            local state = Api._extractBookState("<html><body>plain page</body></html>")
+            assert.are.equal(false, state.registered)
+            assert.is_nil(state.status)
+            assert.is_nil(state.percentage)
+        end)
+    end)
+
+    describe("_extractLoginState", function()
+        it("detects logged-in HTML", function()
+            local html = '<a href="/users/sign_out">Log out</a>'
+            assert.is_true(Api._extractLoginState(html))
+        end)
+
+        it("detects logged-out HTML", function()
+            local html = '<a href="/users/sign_in">Log in</a>'
+            assert.is_false(Api._extractLoginState(html))
+        end)
+    end)
 end)
