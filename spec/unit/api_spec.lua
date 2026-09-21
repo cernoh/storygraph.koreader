@@ -170,4 +170,21 @@ describe("Api pure helpers", function()
             assert.are.equal(100, state.percentage)
         end)
     end)
+
+    describe("_extractLoginState", function()
+        it("returns true when sign-out markers are present", function()
+            local html = '<a href="/users/sign_out" data-method="delete">Sign out</a>'
+            assert.is_true(Api._extractLoginState(html))
+        end)
+
+        it("returns false when sign-in markers are present", function()
+            local html = '<a href="/users/sign_in">Sign in</a>'
+            assert.is_false(Api._extractLoginState(html))
+        end)
+
+        it("returns nil for unknown page shape", function()
+            local html = "<html><body><h1>StoryGraph</h1></body></html>"
+            assert.is_nil(Api._extractLoginState(html))
+        end)
+    end)
 end)

@@ -131,4 +131,16 @@ describe("Api pure helpers", function()
             assert.is_nil(state.percentage)
         end)
     end)
+
+    describe("_extractLoginState", function()
+        it("detects logged-in HTML", function()
+            local html = '<a href="/users/sign_out">Log out</a>'
+            assert.is_true(Api._extractLoginState(html))
+        end)
+
+        it("detects logged-out HTML", function()
+            local html = '<a href="/users/sign_in">Log in</a>'
+            assert.is_false(Api._extractLoginState(html))
+        end)
+    end)
 end)

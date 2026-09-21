@@ -172,6 +172,12 @@ function StoryGraphPlugin:addToMainMenu(menu_items)
                 end,
             },
             {
+                text = "Check login status",
+                callback = function()
+                    self:checkLoginStatus()
+                end,
+            },
+            {
                 text = "Clear sync queue",
                 callback = function()
                     Sync.clearQueue()
@@ -253,6 +259,32 @@ function StoryGraphPlugin:manualSync()
             text = "Sync failed: " .. (err or "will retry later"),
         })
     end
+end
+
+-- Check whether StoryGraph session is currently logged in
+function StoryGraphPlugin:checkLoginStatus()
+    local status, err = Api.getLoginStatus()
+    local message
+
+    if status then
+        if not status.configured then
+            message = "StoryGraph Login:\n\nCredentials: Not configured\nLogged in: No"
+        elseif status.logged_in then
+            message = "StoryGraph Login:\n\nCredentials: Configured\nLogged in: Yes"
+        else
+            message = "StoryGraph Login:\n\nCredentials: Configured\nLogged in: No"
+        end
+    else
+        message = "StoryGraph Login:\n\nCould not verify login status"
+        if err then
+            message = message .. ": " .. err
+        end
+    end
+
+    UIManager:show(InfoMessage:new{
+        text = message,
+        timeout = 3,
+    })
 end
 
 -- Debug/test interface for HttpInspector visual tests
