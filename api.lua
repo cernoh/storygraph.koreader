@@ -10,6 +10,13 @@ local logger = require("logger")
 local Api = {}
 
 local BASE_URL = "https://app.thestorygraph.com"
+local KNOWN_STATUSES = {
+    ["currently-reading"] = true,
+    ["read"] = true,
+    ["own"] = true,
+    ["want-to-read"] = true,
+    ["did-not-finish"] = true,
+}
 
 -- Helper: URL encode
 local function urlencode(str)
@@ -50,6 +57,59 @@ local function buildCookieHeader(cookies)
     local parts = {}
     for name, value in pairs(cookies) do
         table.insert(parts, name .. "=" .. value)
+    end
+
+    -- Helper: Parse current StoryGraph status/progress from a book page
+    local function extractBookState(html)
+        if not html or html == "" then
+            return nil
+        end
+
+        local status_patterns = {
+            'data%-current%-status="([%w%-]+)"',
+            'data%-read%-status="([%w%-]+)"',
+            'name="read_status%[status%]"[^>]-value="([%w%-]+)"',
+            'status=([%w%-]+)"[^>]-aria%-pressed="true"',
+            'status=([%w%-]+)"[^>]-is%-active',
+            'status=([%w%-]+)"[^>]-active',
+        }
+
+        local status
+        for _, pattern in ipairs(status_patterns) do
+            local candidate = html:match(pattern)
+            if candidate and KNOWN_STATUSES[candidate] then
+                status = candidate
+                break
+            end
+        end
+
+        local percentage_patterns = {
+            'name="read_status%[progress_number%]"[^>]-value="(%d+)"',
+            'name="read_status%[last_reached_percent%]"[^>]-value="(%d+)"',
+        }
+
+        local percentage
+        for _, pattern in ipairs(percentage_patterns) do
+            local candidate = html:match(pattern)
+            if candidate then
+                percentage = tonumber(candidate)
+                break
+            end
+        end
+
+        if percentage and percentage > 100 then
+            percentage = 100
+        end
+
+        local registered = status ~= nil
+            or percentage ~= nil
+            or html:find("progress%-tracker%-pane") ~= nil
+
+        return {
+            registered = registered,
+            status = status,
+            percentage = percentage,
+        }
     end
     return table.concat(parts, "; ")
 end
@@ -256,11 +316,42 @@ function Api.updateProgress(book_id, percentage, page_count, last_percentage)
     return true
 end
 
+-- Fetch current reading state from StoryGraph for a specific book
+function Api.getBookState(book_id)
+    local cookies = Config.getSessionCookies()
+    if not cookies["_storygraph_session"] then
+        local ok, err = Api.login()
+        if not ok then
+            return nil, err
+        end
+        cookies = Config.getSessionCookies()
+    end
+
+    local url = BASE_URL .. "/books/" .. urlencode(book_id)
+    local html, code, headers = httpGet(url, cookies)
+
+    if code == 401 or code == 403 then
+        local ok, err = Api.login()
+        if not ok then
+            return nil, err
+        end
+        cookies = Config.getSessionCookies()
+        html, code, headers = httpGet(url, cookies)
+    end
+
+    if not html or code ~= 200 then
+        return nil, formatHttpError("Book state lookup", code, html, headers)
+    end
+
+    return extractBookState(html)
+end
+
 -- Export helpers for testing
 Api._urlencode = urlencode
 Api._extractCsrfToken = extractCsrfToken
 Api._parseCookies = parseCookies
 Api._buildCookieHeader = buildCookieHeader
 Api._formatHttpError = formatHttpError
+Api._extractBookState = extractBookState
 
 return Api
